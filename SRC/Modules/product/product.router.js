@@ -50,6 +50,6 @@ router.patch(
 );
 
 
-router.get(`/productlist`, ProductController.allProduct);
+router.get(`/`, ProductController.allProduct);
 
 export default router;
