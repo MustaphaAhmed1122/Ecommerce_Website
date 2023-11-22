@@ -37,6 +37,7 @@ const initapp = (app, express) => {
   //   next();
   // });
   app.use(cors({}));
+
   if (process.env.MOOD == "DEV") {
     app.use(morgan("dev"));
   } else {
@@ -46,7 +47,7 @@ const initapp = (app, express) => {
   app.use(express.json({}));
   //APP ROUTING
   app.get(`/`, (req, res) => {
-    return res.json({ message: "welcome home" });
+    return res.status(200).json({ message: "welcome home" });
   });
   app.use(`/user`, UserRouter);
   app.use(`/Auth`, AuthRouter);
@@ -60,7 +61,7 @@ const initapp = (app, express) => {
   app.use(`/category`, CategoryRouter);
 
   app.all("*", (req, res, next) => {
-    return res.json({ message: "PAGE NOT FOUND" });
+    return res.status(404).json({ message: "PAGE NOT FOUND" });
   });
   //   Global Handel Error
   app.use(globalErrorHandler);
