@@ -17,5 +17,4 @@ router.patch(`/deleteItem`, auth(endPoint.delete), CartController.deleteItem);
 
 router.patch(`/clearItem`, auth(endPoint.delete), CartController.clearItem);
 
-
 export default router;

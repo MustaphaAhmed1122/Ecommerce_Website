@@ -27,6 +27,6 @@ router.put(
 );
 
 // router.get(`/`, auth(Object.values(Roles)), CategoryController.allcategory);
-router.get(`/`, auth(Object.values(Roles)), CategoryController.allcategory);
+router.get(`/`, CategoryController.allcategory);
 
 export default router;
