@@ -11,7 +11,7 @@ export const createOrder = joi.object({
     .min(1)
     .max(3)
     .required(),
-  copounName: joi.string(),
+  couponName: joi.string(),
   paymentType: joi.string().valid("cash", "card"),
   products: joi.array().items(
     joi

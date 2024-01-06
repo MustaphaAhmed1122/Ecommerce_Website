@@ -9,10 +9,12 @@ import {
 } from "../../cart/controller/cart.js";
 import { createInvoice } from "../../../Utils/PDF.js";
 import SendEmail from "../../../Utils/SendEmail.js";
+import Payment from "../../../Utils/Payment.js";
+import Stripe from "stripe";
 
 //______________________________order all cart & selected item
 export const create = asyncHandle(async (req, res, next) => {
-  const { products, phone, address, copounName, paymentType, name } = req.body;
+  const { products, phone, address, couponName, paymentType, name } = req.body;
 
   if (!req.body.products) {
     const cart = await CartModel.findOne({ UserID: req.user._id });
@@ -24,15 +26,15 @@ export const create = asyncHandle(async (req, res, next) => {
   }
 
   //________________________check copoun____________________
-  if (copounName) {
-    const copoun = await CouponModel.findOne({
-      name: copounName.toLowerCase(),
+  if (couponName) {
+    const coupon = await CouponModel.findOne({
+      name: couponName.toLowerCase(),
       UserBY: { $nin: req.user._id },
     });
-    if (!copoun || copoun.expireDate.getTime() < Date.now()) {
+    if (!coupon || coupon.expireDate.getTime() < Date.now()) {
       return next(new Error("IN_Valid copoun OR Expired Date", { cause: 400 }));
     }
-    req.body.copoun = copoun;
+    req.body.coupon = coupon;
   }
 
   //________________________insert Products____________________
@@ -72,10 +74,10 @@ export const create = asyncHandle(async (req, res, next) => {
     phone,
     address,
     products: FinallProductlist,
-    copoupID: req.body.copoun?._id,
+    couponID: req.body.coupon?._id,
     subtotal,
     total:
-      subtotal - ((subtotal * (req.body.copoun?.amount || 0)) / 100).toFixed(),
+      subtotal - ((subtotal * (req.body.coupon?.amount || 0)) / 100).toFixed(),
     paymentType,
     orderStatus: paymentType == "card" ? "waitpayment" : "placed",
   });
@@ -89,49 +91,90 @@ export const create = asyncHandle(async (req, res, next) => {
   }
 
   //_____________________Store copoun____________________
-  if (req.body.copoun) {
+  if (req.body.coupon) {
     await CouponModel.updateOne(
-      { _id: req.body.copoun._id },
+      { _id: req.body.coupon._id },
       { $addToSet: { UserBY: req.user._id } }
     );
   }
+
   //_________________Delete or decrease item_____________________
   if (req.body.IsCart) {
     await clearItemFromCart(req.user._id);
   } else {
     await deleteItemFromCart(req.user._id, productIDs);
   }
+
   //___________________________generate Invoice________________________
+  // const invoice = {
+  //   shipping: {
+  //     name: req.user.username,
+  //     address: Order.address,
+  //     city: "Cairo",
+  //     state: "Cairo",
+  //     country: "Egypt",
+  //     postal_code: 94111,
+  //   },
+  //   items: Order.products,
+  //   subtotal: subtotal,
+  //   finalprice: Order.finalprice,
+  //   total: Order.total,
+  //   invoice_nr: Order._id,
+  //   date: Order.createdAt,
+  // };
+  // await createInvoice(invoice, "invoice.pdf");
+  // await SendEmail({
+  //   to: req.user.email,
+  //   subject: "Invoice",
+  //   attachments: [
+  //     {
+  //       path: "invoice.pdf",
+  //       contentType: "application/pdf",
+  //     },
+  //   ],
+  // });
 
-  const invoice = {
-    shipping: {
-      name: req.user.username,
-      address: Order.address,
-      city: "Cairo",
-      state: "Cairo",
-      country: "Egypt",
-      postal_code: 94111,
-    },
-    items: Order.products,
-    subtotal: subtotal,
-    finalprice: Order.finalprice,
-    total: Order.total,
-    invoice_nr: Order._id,
-    date: Order.createdAt,
-  };
-  await createInvoice(invoice, "invoice.pdf");
-  await SendEmail({
-    to: req.user.email,
-    subject: "Invoice",
-    attachments: [
-      {
-        path: "invoice.pdf",
-        contentType: "application/pdf",
+  //_______________________Stripe Payment_____________________________
+  if (Order.paymentType == "card") {
+    const stripe = new Stripe(process.env.STRIPE_KEY);
+
+    if (req.body.coupon) {
+      const coupon = await stripe.coupons.create({
+        percent_off: req.body.coupon.amount,
+        duration: "once",
+      });
+      req.body.couponID = coupon.id;
+    }
+    const session = await Payment({
+      stripe,
+      payment_method_types: ["card"],
+      mode: "payment",
+      customer_email: req.user.email,
+      metadata: {
+        orderID: Order._id.toString(),
       },
-    ],
-  });
+      cancel_url: `${process.env.Cancel_URL}?orderID=${Order._id.toString()}`,
+      success_url: `${process.env.Success_URL}?orderID=${Order._id.toString()}`,
+      line_items: Order.products.map((prodcut) => {
+        return {
+          price_data: {
+            currency: "egp",
+            product_data: {
+              name: prodcut.name,
+            },
+            unit_amount: prodcut.unitPrice,
+          },
+          quantity: prodcut.quantity,
+        };
+      }),
+      discounts: req.body.couponID ? [{ coupon: req.body.couponID }] : [],
+    });
 
-  return res.status(201).json({ message: "Created", Order });
+    return res.status(201).json({ message: "Card Order", Order, session });
+  }
+
+  //____________________________Cash Order_________________________________________
+  return res.status(201).json({ message: "Cash Order", Order });
 });
 
 export const cancelOrder = asyncHandle(async (req, res, next) => {
@@ -200,7 +243,35 @@ export const cancelOrderByAdmin = asyncHandle(async (req, res, next) => {
   );
 
   if (!cancleOrder.matchedCount) {
-    return next(new Error("Fail to update your order", { cause: 400 }));
+    return next(new Error("cancle to update your order", { cause: 400 }));
   }
-  return res.status(200).json({ message: "Updated Success" });
+  return res.status(200).json({ message: "cancled" });
+});
+
+export const webhook = asyncHandle(async (req, res) => {
+  const stripe = new Stripe(process.env.STRIPE_KEY);
+  const sig = req.headers["stripe-signature"];
+
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.endpointSecret
+    );
+  } catch (err) {
+    res.status(400).send(`Webhook Error: ${err.message}`);
+    return;
+  }
+
+  // Handle the event
+  const { orderID } = event.data.object.metadata;
+  if (event.type == "checkout.session.completed") {
+    await OrderModel.updateOne({ _id: orderID }, { orderStatus: "rejected" });
+    return res.status(400).json({ message: "rejected Oreder🤦‍♂️" });
+  }
+  await OrderModel.updateOne({ _id: orderID }, { orderStatus: "placed" });
+
+  return res.status(200).json({ message: "Done✔" });
 });

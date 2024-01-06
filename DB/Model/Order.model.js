@@ -28,10 +28,10 @@ const OrderSchema = new mongoose.Schema(
       },
     ],
 
-    copoupID: { type: Types.ObjectId, ref: "Coupon" },
+    couponID: { type: Types.ObjectId, ref: "Coupon" },
     subtotal: { type: Number, default: 1, required: true },
     total: { type: Number, default: 1, required: true },
-    paymentType: { type: String, default: "cash", enum: ["cash", "card"] },
+    paymentType: { type: String, default: "Cash", enum: ["cash", "card"] },
     orderStatus: {
       type: String,
       default: "placed",

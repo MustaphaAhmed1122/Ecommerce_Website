@@ -1,5 +1,6 @@
 import { Router } from "express";
 const router = Router();
+import express from "express";
 import * as OrderController from "./controller/order.js";
 import * as ValidationSchema from "./order.validation.js";
 import { auth } from "../../Middleware/auth.js";
@@ -28,6 +29,15 @@ router.patch(
   auth(endPoint.cancleorderByAdmin),
   validtion(ValidationSchema.cancleorderByAdmin),
   OrderController.cancelOrderByAdmin
+);
+
+const endpointSecret =
+  "whsec_77b67dbe9cc80203e8ad187f05e1a6162498ee55fe570830d66f9892320fc8f3";
+
+router.post(
+  "/webhook",
+  express.raw({ type: "application/json" }),
+  OrderController.webhook
 );
 
 export default router;

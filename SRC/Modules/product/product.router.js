@@ -49,7 +49,6 @@ router.patch(
   ProductController.removeTowishlist
 );
 
-
 router.get(`/`, ProductController.allProduct);
 
 export default router;

@@ -44,7 +44,13 @@ const initapp = (app, express) => {
     app.use(morgan("combined"));
   }
   //Buffer DATA
-  app.use(express.json({}));
+  app.use((req, res, next) => {
+    if (req.originalUrl == "/order/webhook") {
+      next();
+    } else {
+      express.json({})(req, res, next);
+    }
+  });
   //APP ROUTING
   app.get(`/`, (req, res) => {
     return res.status(200).json({ message: "welcome home" });
